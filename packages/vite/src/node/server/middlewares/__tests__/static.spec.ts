@@ -1,5 +1,12 @@
 import { describe, expect, test } from 'vitest'
-import { isFileInTargetPath, looksLikeWindowsShortNamePath } from '../static'
+import { isWindows } from '../../../../shared/utils'
+import { resolveConfig } from '../../../config'
+import { normalizePath } from '../../../utils'
+import {
+  isFileInTargetPath,
+  isFileLoadingAllowed,
+  looksLikeWindowsShortNamePath,
+} from '../static'
 
 describe('isFileInTargetPath', () => {
   const cases = {
@@ -59,6 +66,39 @@ describe('looksLikeWindowsShortNamePath', () => {
   for (const filePath of legitimateTildePaths) {
     test(`looksLikeWindowsShortNamePath("${filePath}") is false`, () => {
       expect(looksLikeWindowsShortNamePath(filePath)).toBe(false)
+    })
+  }
+})
+
+describe('isFileLoadingAllowed', async () => {
+  const root = normalizePath(import.meta.dirname)
+  const config = await resolveConfig(
+    { configFile: false, root, server: { fs: { allow: [root] } } },
+    'serve',
+  )
+
+  test.skipIf(isWindows)('allows `:` in file names', () => {
+    expect(isFileLoadingAllowed(config, `${root}/route:name/index.ts`)).toBe(
+      true,
+    )
+  })
+
+  test.runIf(isWindows)('rejects `:` on Windows', () => {
+    expect(isFileLoadingAllowed(config, `${root}/route:name/index.ts`)).toBe(
+      false,
+    )
+  })
+
+  const deniedFileStreamPaths = [
+    '.env::$DATA',
+    '.env::$DATA/',
+    '.env:Zone.Identifier',
+    'cert.pem::$DATA',
+    '.git::$INDEX_ALLOCATION/config',
+  ]
+  for (const filePath of deniedFileStreamPaths) {
+    test(`rejects NTFS ADS of a denied file: "${filePath}"`, () => {
+      expect(isFileLoadingAllowed(config, `${root}/${filePath}`)).toBe(false)
     })
   }
 })

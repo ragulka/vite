@@ -287,6 +287,8 @@ export function isFileInTargetPath(
 }
 
 const windowsDriveRE = /^[A-Z]:/i
+// the stream part of each NTFS ADS segment (`name:stream:$TYPE`)
+const ntfsStreamRE = /:[^/]*/g
 // A Windows 8.3 "short name" segment looks like `NAME~1` or `NAME~1.EXT`: at
 // most 6 non-`~`/`.` characters, a `~`, then digits, within a single path
 // segment. Matching only this shape (rather than any `~`) still blocks the
@@ -328,8 +330,8 @@ export function isFileLoadingAllowed(
 
   const hasDriveLetter = isWindows && windowsDriveRE.test(filePath)
   const hasColon = (hasDriveLetter ? filePath.slice(2) : filePath).includes(':')
-  if (hasColon) {
-    // the `:` is included in the path which may be used for NTFS ADS
+  if (isWindows && hasColon) {
+    // `:` is not allowed in Windows file names, so it is always NTFS ADS
     return false
   }
 
@@ -339,6 +341,15 @@ export function isFileLoadingAllowed(
     ? filePath.slice(0, -1)
     : filePath
   if (config.fsDenyGlob(filePathWithoutTrailingSlash)) return false
+
+  if (
+    hasColon &&
+    config.fsDenyGlob(filePathWithoutTrailingSlash.replace(ntfsStreamRE, ''))
+  ) {
+    // `:` is valid in file names on other OSes, but NTFS volumes mounted there
+    // can still expose ADS (e.g. `.env::$DATA` reads `.env`)
+    return false
+  }
 
   if (config.safeModulePaths.has(filePath)) return true
 
